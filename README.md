@@ -868,7 +868,7 @@ groundcover deploy --kube-state-metrics --custom-metrics -f ./groundcover.yaml
 Leave the default option enabled to deploy to tainted nodes so that aligator deploys to the master nodes as well.
 View the app website [here](https://app.groundcover.com)
 
-### CloudCasaa (Backups)
+### CloudCasa (Backups)
 1. Deploy cloudcasa using the command they provide you on [their website](https://home.cloudsasa.io) when setting up a cluster.
 2. Set up an hourly backup job for the whole cluster (excluding PVs if on free tier) with 30 day retention
 3. Run the new backup job.
