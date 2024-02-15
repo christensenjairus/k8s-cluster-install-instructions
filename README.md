@@ -110,7 +110,7 @@ sudo apt-get install -y kubelet="$KUBERNETES_VERSION" kubectl="$KUBERNETES_VERSI
 sudo apt-mark hold kubelet kubeadm kubectl
 
 # Create /etc/hosts record for ease of use by the cluster
-VIP=10.0.0.110
+VIP=10.0.100.110
 VIP_HOSTNAME=kube-api-server
 echo "${VIP} ${VIP_HOSTNAME}" | sudo tee -a /etc/cloud/templates/hosts.debian.tmpl | sudo tee -a /etc/hosts
 ```
@@ -119,7 +119,7 @@ echo "${VIP} ${VIP_HOSTNAME}" | sudo tee -a /etc/cloud/templates/hosts.debian.tm
 ```bash
 # Kube-VIP Manifest for master nodes
 export KVVERSION=v0.7.0 # latest at the time of writing, but I wanted it to be static
-export VIP="10.0.0.110"
+export VIP="10.0.100.110"
 export VIP_HOSTNAME=kube-api-server
 export INTERFACE=eth0
 
@@ -144,15 +144,15 @@ sudo ctr run --rm --net-host ghcr.io/kube-vip/kube-vip:$KVVERSION vip /kube-vip 
 Copy working ssh key onto first etcd node
 ```bash
 # Create and share SSH key (from your personal pc) to first etcd node's root account
-scp ~/.ssh/id_rsa line6@10.0.0.114:~/
-ssh line6@10.0.0.114 "sudo mv ~/id_rsa /root/.ssh/id_rsa && sudo chown root:root /root/.ssh/id_rsa && sudo chmod 600 /root/.ssh/id_rsa"
+scp ~/.ssh/id_rsa line6@10.0.100.114:~/
+ssh line6@10.0.100.114 "sudo mv ~/id_rsa /root/.ssh/id_rsa && sudo chown root:root /root/.ssh/id_rsa && sudo chmod 600 /root/.ssh/id_rsa"
 ```
 
 Ensure ssh works from first etcd node
 ```bash
 # SSH into first etcd node now and ensure that you can get in
-sudo ssh line6@10.0.0.115 echo SSH Works!
-sudo ssh line6@10.0.0.116 echo SSH Works!
+sudo ssh line6@10.0.100.115 echo SSH Works!
+sudo ssh line6@10.0.100.116 echo SSH Works!
 ```
 
  ### Configure kubelet to be service manager for etcd
@@ -193,9 +193,9 @@ sudo systemctl restart kubelet
 Run on just the first etcd node
 ```bash
 # Update HOST0, HOST1 and HOST2 with the IPs of your hosts
-export HOST0=10.0.0.114
-export HOST1=10.0.0.115
-export HOST2=10.0.0.116
+export HOST0=10.0.100.114
+export HOST1=10.0.100.115
+export HOST2=10.0.100.116
 
 # Update NAME0, NAME1 and NAME2 with the hostnames of your hosts
 export NAME0="beta-k8s-etcd-1"
@@ -243,9 +243,9 @@ done
 ### Generate certificate authority, certificates, and copy them
 Run on first etcd node
 ```bash
-export HOST0=10.0.0.114
-export HOST1=10.0.0.115
-export HOST2=10.0.0.116
+export HOST0=10.0.100.114
+export HOST1=10.0.100.115
+export HOST2=10.0.100.116
 
 # Generate certificate authority
 sudo kubeadm init phase certs etcd-ca
@@ -311,9 +311,9 @@ sudo install -o root -g root -m 0755 ./etcd-v$ETCDCTL_VERSION-linux-amd64/etcdct
 rm -r ./etcd-v$ETCDCTL_VERSION-linux-amd64*
 
 # check health
-export HOST0=10.0.0.114
-export HOST1=10.0.0.115
-export HOST2=10.0.0.116
+export HOST0=10.0.100.114
+export HOST1=10.0.100.115
+export HOST2=10.0.100.116
 alias cmd="sudo ETCDCTL_API=3 etcdctl \
 --cert /etc/kubernetes/pki/etcd/peer.crt \
 --key /etc/kubernetes/pki/etcd/peer.key \
@@ -326,7 +326,7 @@ cmd --endpoints https://${HOST2}:2379 endpoint health
 Copy necessary files to the first control plane node
 ```bash
 export USER=line6
-export CONTROL_PLANE="$USER@10.0.0.111"
+export CONTROL_PLANE="$USER@10.0.100.111"
 sudo scp /etc/kubernetes/pki/etcd/ca.crt "${CONTROL_PLANE}":~/
 sudo scp /etc/kubernetes/pki/apiserver-etcd-client.crt "${CONTROL_PLANE}":~/
 sudo scp /etc/kubernetes/pki/apiserver-etcd-client.key "${CONTROL_PLANE}":~/
@@ -346,7 +346,7 @@ sudo rm /root/.ssh/id_rsa
 # Create K8S Cluster
 Create kubeadm config file on first control plane node
 ```bash
-export VIP="10.0.0.110"
+export VIP="10.0.100.110"
 export VIP_HOSTNAME=kube-api-server
 export CLUSTER_NAME="beta-k8s"
 POD_CIDR="10.42.0.0/16" # default in k3s, may as well be consistent
@@ -373,9 +373,9 @@ networking:
 etcd:
   external:
     endpoints:
-      - https://10.0.0.114:2379
-      - https://10.0.0.115:2379
-      - https://10.0.0.116:2379
+      - https://10.0.100.114:2379
+      - https://10.0.100.115:2379
+      - https://10.0.100.116:2379
     caFile: /etc/kubernetes/pki/etcd/ca.crt
     certFile: /etc/kubernetes/pki/apiserver-etcd-client.crt
     keyFile: /etc/kubernetes/pki/apiserver-etcd-client.key
@@ -414,10 +414,12 @@ sudo tar xzvfC cilium-linux-${CLI_ARCH}.tar.gz /usr/local/bin
 rm cilium-linux-${CLI_ARCH}*
 
 POD_CIDR="10.42.0.0/16" # default in k3s, may as well be consistent
+VIP="10.0.100.100"
+CLUSTER_NAME="beta-k8s"
 cat << EOF > cilium.yaml
 cluster:
   id: 0
-  name: beta-k8s
+  name: $CLUSTER_NAME
 envoy:
   enabled: true
 encryption:
@@ -432,7 +434,7 @@ ipam:
    clusterPoolIPv4MaskSize: 20
    clusterPoolIPv4PodCIDRList: 
      - "$POD_CIDR"
-k8sServiceHost: 10.0.0.110
+k8sServiceHost: $VIP
 k8sServicePort: 6443
 kubeProxyReplacement: strict
 EOF
@@ -440,32 +442,44 @@ EOF
 # install cilium
 CILIUM_VERSION=v1.14.6
 cilium install --version=$CILIUM_VERSION --helm-values cilium.yaml
+```
 
-# check cilium status until OK (takes close to a minute before its ready)
+The nodes should one by one become 'Ready'
+
+Install cilium hubble and ensure it is working correctly
+```
+# check cilium status until OK (takes a minute before its ready)
 cilium status
 
 # enable hubble
 cilium enable hubble
+
+# install hubble cli
+HUBBLE_VERSION=$(curl -s https://raw.githubusercontent.com/cilium/hubble/master/stable.txt)
+HUBBLE_ARCH=amd64
+if [ "$(uname -m)" = "aarch64" ]; then HUBBLE_ARCH=arm64; fi
+curl -L --fail --remote-name-all https://github.com/cilium/hubble/releases/download/$HUBBLE_VERSION/hubble-linux-${HUBBLE_ARCH}.tar.gz{,.sha256sum}
+sha256sum --check hubble-linux-${HUBBLE_ARCH}.tar.gz.sha256sum
+sudo tar xzvfC hubble-linux-${HUBBLE_ARCH}.tar.gz /usr/local/bin
+rm hubble-linux-${HUBBLE_ARCH}*
 
 # test hubble
 cilium hubble port-forward&
 hubble status
 
 # optionally observe traffic
-hubble observe
+hubble observe -n kube-system --follow
 ```
-
-The nodes should one by one become 'Ready'
 
 ### Copy your kubeconfig to your personal PC
 ```bash
 CLUSTER_NAME=beta-k8s
-scp line6@10.0.0.111:~/.kube/config ~/.kube/$CLUSTER_NAME.kubeconfig
+scp line6@10.0.100.111:~/.kube/config ~/.kube/$CLUSTER_NAME.kubeconfig
 source ~/.zshrc
 
 # Rename context (don't do until on personal computer)
 kubectl config rename-context kubernetes-admin@$CLUSTER_NAME $CLUSTER_NAME
-sed -i '' 's/kube-api-server/10.0.0.110/g' $HOME/.kube/$CLUSTER_NAME.kubeconfig
+sed -i '' 's/kube-api-server/10.0.100.110/g' $HOME/.kube/$CLUSTER_NAME.kubeconfig
 kubectl config use-context $CLUSTER_NAME
 kubectl get nodes
 ```
@@ -474,5 +488,372 @@ kubectl get nodes
 # ***TAKE SNAPSHOT***
 ```bash
 ./create_cluster_snapshot.sh beta k8s_cluster_running "Installed k8s cluster on all nodes. Cilium installed with hubble & encryption."
+```
+***
+
+# Services Installation
+### MetalLB
+```bash
+# Install metallb
+MetalLB_IPRange="10.0.100.200-10.0.100.254"
+METALLB_VERSION=0.13.12
+
+kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v$METALLB_VERSION/config/manifests/metallb-native.yaml
+
+# provide an ipaddresspool and l2advertisement (may have to wait a minute for the validating webhook to be on)
+cat <<EOF | kubectl apply -f -
+---
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: metallb-ipaddresspool
+  namespace: metallb-system
+spec:
+  addresses:
+  - $MetalLB_IPRange
+  autoAssign: true
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: metallb-l2advertisement
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+  - metallb-ipaddresspool
+EOF
+```
+
+### Cert-Manager with ClusterIssuer (using CloudFlare)
+```bash
+CERT_MANAGER_CHART_VERSION="v1.14.2" # app version is the same
+CLOUDFLARE_GLOBAL_API_KEY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaa # replace me
+
+cat <<EOF > cert-manager.yaml
+installCRDs: true
+replicaCount: 3
+extraArgs:
+  - --dns01-recursive-nameservers=1.1.1.1:53,1.0.0.1:53 # cloudflare
+  - --dns01-recursive-nameservers-only
+podDnsPolicy: None
+podDnsConfig:
+  nameservers:
+    - "1.1.1.1" # cloudflare
+    - "1.0.0.1" # cloudflare
+EOF
+
+# install
+helm repo add jetstack https://charts.jetstack.io
+helm repo update
+helm install cert-manager jetstack/cert-manager --namespace cert-manager --create-namespace --version=${CERT_MANAGER_CHART_VERSION} -f ./cert-manager.yaml
+
+# create configs for clusterissuer
+cat <<EOF > clusterissuer-acme.yaml
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: acme-issuer
+  namespace: cert-manager
+spec:
+  acme:
+    email: christensenjairus@gmail.com
+    # server: https://acme-v02.api.letsencrypt.org/directory # Letsencrypt Production
+    server: https://acme-staging-v02.api.letsencrypt.org/directory # Letsencrypt Staging
+    privateKeySecretRef:
+      name: acme-issuer-account-key
+    solvers:
+    - dns01:
+        cloudflare:
+          email: christensenjairus@gmail.com
+          apiKeySecretRef:
+            name: cloudflare-api-key-secret
+            key: api-key
+EOF
+
+cat <<EOF > secret-cloudflare.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cloudflare-api-key-secret
+  namespace: cert-manager
+type: Opaque
+stringData:
+  api-key: $CLOUDFLARE_GLOBAL_API_KEY
+EOF
+
+kubectl apply -f ./clusterissuer-acme.yaml -f ./secret-cloudflare.yaml -n cert-manager
+```
+
+### Traefik Ingress Controller
+```bash
+TRAEFIK_CHART_VERSION=26.0.0 # traefik version is v2.10.6
+CLUSTER_ISSUER_NAME=acme-issuer
+INGRESS_TLS_SECRET_NAME="traefik-beta-christensencloud.us-tls"
+INGRESS_DOMAIN_NAME="traefik-beta.christensencloud.us"
+WHITELISTED_IP_RANGE="10.0.0.0/8" # set to your private ip range. It will be used as a whitelist until ingress authentication is set up for your ingresses in case these are port-forwarded and you want to control how they are exposed.
+
+cat <<EOF > traefik.yaml
+deployment:
+  replicas: 3
+ingressRoute:
+  dashboard:
+    annotations:
+      cert-manager.io/cluster-issuer: $CLUSTER_ISSUER_NAME
+      kubernetes.io/ingress.class: traefik
+    entryPoints: ["websecure"]
+    middlewares:
+    - name: internal-whitelist
+      namespace: traefik
+    tls:
+      secretName: $INGRESS_TLS_SECRET_NAME
+      domains:
+      - main: "$INGRESS_DOMAIN_NAME"
+logs:
+  access:
+    enabled: true
+additionalArguments:
+  - '--serversTransport.insecureSkipVerify=true' # allows for HTTPS backends with self-signed certs
+ports: 
+  web:
+    redirectTo:
+      port: websecure
+EOF
+
+helm repo add traefik https://traefik.github.io/charts
+helm repo update
+helm install traefik traefik/traefik -n traefik --create-namespace --version=${TRAEFIK_CHART_VERSION} -f ./traefik.yaml
+
+# create cert needed for the traefik ingress
+cat <<EOF | kubectl apply -n traefik -f -
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: $INGRESS_TLS_SECRET_NAME
+spec:
+  secretName: $INGRESS_TLS_SECRET_NAME
+  issuerRef:
+    name: acme-issuer
+    kind: ClusterIssuer
+  dnsNames:
+    - '$INGRESS_DOMAIN_NAME'
+EOF
+
+# create helpful IP whitelist so only you can access this (for now)
+cat <<EOF | kubectl apply -n traefik -f -
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: internal-whitelist
+  namespace: traefik
+spec:
+  ipWhiteList:
+    sourceRange:
+    - $WHITELISTED_IP_RANGE
+EOF
+```
+
+### Longhorn distributed storage
+```bash
+LONGHORN_CHART_VERSION=1.5.3
+NFS_STORAGE_FOR_LONGHORN="nfs://10.0.100.2:/mnt/HDD_POOL/k8s/longhorn/"
+INGRESS_DOMAIN_NAME="longhorn-beta.christensencloud.us"
+INGRESS_TLS_SECRET_NAME="traefik-beta-christensencloud.us-tls"
+
+cat <<EOF > longhorn.yaml
+defaultSettings:
+  backupTarget: "$NFS_STORAGE_FOR_LONGHORN"
+  defaultDataLocality: best-effort
+  defaultLonghornStaticStorageClass: longhorn
+  defaultNodeSelector:
+    enable: false
+  replicaAutoBalance: best-effort
+  autoSalvage: true
+  storageReservedPercentageForDefaultDisk: 15
+
+image:
+  defaultImage: true
+
+longhorn:
+  default_setting: true
+
+persistence:
+  defaultDataLocality: best-effort
+  reclaimPolicy: Retain
+  recurringJobSelector:
+    enable: true
+    joblist: '[{\"name\":\"6hourssnap\", \"isGroup\":true},{\"name\":\"dailybackup\", \"isGroup\":true}]'
+  removeSnapshotsDuringFilesystemTrim: enabled
+
+ingress:
+  enabled: true
+  ingressClassName: traefik
+  host: $INGRESS_DOMAIN_NAME
+  tls: true
+  tlsSecret: $INGRESS_TLS_SECRET_NAME
+  path: /
+  annotations:
+    cert-manager.io/cluster-issuer: acme-issuer
+    traefik.ingress.kubernetes.io/router.middlewares: traefik-internal-whitelist@kubernetescrd
+EOF
+
+helm repo add longhorn https://charts.longhorn.io
+helm repo update
+helm install longhorn longhorn/longhorn \
+  --namespace longhorn-system \
+  --create-namespace \
+  --values ./longhorn.yaml \
+  --version $LONGHORN_CHART_VERSION
+
+# create cert needed for the longhorn ingress
+cat <<EOF | kubectl apply -n traefik -f -
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: $INGRESS_TLS_SECRET_NAME
+spec:
+  secretName: $INGRESS_TLS_SECRET_NAME
+  issuerRef:
+    name: acme-issuer
+    kind: ClusterIssuer
+  dnsNames:
+    - '$INGRESS_DOMAIN_NAME'
+EOF
+
+# optionally create an extra ingress class for one-replica longhorn volumes
+cat <<EOF | kubectl apply -n traefik -f -
+allowVolumeExpansion: true
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false"
+  name: longhorn-one-replica
+parameters:
+  dataLocality: best-effort
+  fromBackup: ""
+  fsType: ext4
+  numberOfReplicas: "1"
+  staleReplicaTimeout: "30"
+provisioner: driver.longhorn.io
+reclaimPolicy: Retain
+volumeBindingMode: Immediate
+EOF
+```
+
+Now go into longhorn's UI and manually create two recurring jobs 
+(these apply to the default group because these two jobs were specified in the config)
+1. 6hourssnap
+	* Name: 6hourssnap
+	* Force Create: No
+	* Task: Snapshot
+	* Retain: 18
+	* Concurrency: 5
+	* Cron: 0 0/6 1 * ?
+	* Groups: 6hourssnap
+	* Labels: None
+2. dailybackup
+	* Name: 6hourssnap
+	* Force Create: No
+	* Task: Backup
+	* Retain: 14
+	* Concurrency: 5
+	* Cron: 0 0 * * *
+	* Groups: dailybackup
+	* Labels: None
+
+### Kubernetes Dashboard
+```bash
+KUBERNETES_DASH_VERSION=v2.7.0
+INGRESS_DOMAIN_NAME="k8s-beta.christensencloud.us"
+INGRESS_TLS_SECRET_NAME="k8s-beta-christensencloud.us-tls"
+
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/${KUBERNETES_DASH_VERSION}/aio/deploy/recommended.yaml
+
+# create admin user, user rolebinding, ingress, and cert
+cat <<EOF | kubectl apply -n kubernetes-dashboard -f -
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: admin-user
+  namespace: kubernetes-dashboard
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: admin-user
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: admin-user
+  namespace: kubernetes-dashboard
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: $INGRESS_DOMAIN_NAME
+  namespace: kubernetes-dashboard
+  annotations:
+    cert-manager.io/cluster-issuer: acme-issuer
+    traefik.ingress.kubernetes.io/router.middlewares: traefik-internal-whitelist@kubernetescrd
+spec:
+  ingressClassName: traefik
+  rules:
+  - host: $INGRESS_DOMAIN_NAME
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: kubernetes-dashboard
+            port:
+              number: 443
+  tls:
+  - hosts:
+    - $INGRESS_DOMAIN_NAME
+    secretName: $INGRESS_TLS_SECRET_NAME
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: $INGRESS_TLS_SECRET_NAME
+spec:
+  secretName: $INGRESS_TLS_SECRET_NAME
+  issuerRef:
+    name: acme-issuer
+    kind: ClusterIssuer
+  dnsNames:
+    - '$INGRESS_DOMAIN_NAME'
+EOF
+
+# get a token to log in
+echo "Token for login..."
+kubectl -n kubernetes-dashboard create token admin-user
+```
+
+***
+# ***TAKE SNAPSHOT***
+```bash
+./create_cluster_snapshot.sh beta metallb_traefik_longhorn_dashboard "Installed metallb, traefik, certmanager, longhorn, and the kubernetes dashboard with ingresses."
+```
+***
+
+# Third-party services
+### GroundCover (Monitoring)
+1. Deploy GroundCover using the command they provide on [their website](https://app.groundcover.com/).
+2. **Do NOT check the option to deploy to tainted nodes**
+
+### CloudCasaa (Backups)
+1. Deploy cloudcasa using the command they provide you on [their website](https://home.cloudsasa.io) when setting up a cluster.
+2. Set up an hourly backup job for the whole cluster (excluding PVs if on free tier) with 30 day retention
+3. Run the new backup job.
+
+***
+# ***TAKE SNAPSHOT***
+```bash
+./create_cluster_snapshot.sh beta third-party-services-installed "Installed groundcover monitoring and cloudcasa backups."
 ```
 ***
