@@ -19,6 +19,7 @@ sudo bash -c 'echo -e \"defaults {\\n    user_friendly_names yes\\n    find_mult
 sudo reboot
 ```
 
+Wait for all nodes to reboot fully
 ***
 # ***TAKE SNAPSHOT***
 ```bash
@@ -141,22 +142,30 @@ sudo ctr run --rm --net-host ghcr.io/kube-vip/kube-vip:$KVVERSION vip /kube-vip 
 ***
 
 # Create ETCD Cluster
-Copy working ssh key onto first etcd node
+**On all etc and cp nodes**, create /etc/hosts entries
+```bash
+export HOST0=10.0.100.114
+export HOST1=10.0.100.115
+export HOST2=10.0.100.116
+
+sudo bash -c "echo -e \"${HOST0} kube-etcd-server-1\n${HOST1} kube-etcd-server-2\n${HOST2} kube-etcd-server-3\" >> /etc/hosts"
+```
+
+**On personal PC**, copy working ssh key onto first etcd node
 ```bash
 # Create and share SSH key (from your personal pc) to first etcd node's root account
 scp ~/.ssh/id_rsa line6@10.0.100.114:~/
 ssh line6@10.0.100.114 "sudo mv ~/id_rsa /root/.ssh/id_rsa && sudo chown root:root /root/.ssh/id_rsa && sudo chmod 600 /root/.ssh/id_rsa"
 ```
 
-Ensure ssh works from first etcd node
+**On first etcd node**, ensure ssh works to other two etcd nodes
 ```bash
 # SSH into first etcd node now and ensure that you can get in
 sudo ssh line6@10.0.100.115 echo SSH Works!
 sudo ssh line6@10.0.100.116 echo SSH Works!
 ```
 
- ### Configure kubelet to be service manager for etcd
- Run on every etc node
+ **On every etc node**, configure kubelet to be service manager for etcd
 ```bash
 sudo mkdir -p /etc/systemd/system/kubelet.service.d/
 cat << EOF | sudo tee /etc/systemd/system/kubelet.service.d/kubelet.conf
@@ -189,8 +198,7 @@ sudo systemctl daemon-reload
 sudo systemctl restart kubelet
 ````
 
-### Create the configuration files for kubeadm 
-Run on just the first etcd node
+**On just the first etcd node**, create the configuration files for kubeadm
 ```bash
 # Update HOST0, HOST1 and HOST2 with the IPs of your hosts
 export HOST0=10.0.100.114
@@ -198,9 +206,9 @@ export HOST1=10.0.100.115
 export HOST2=10.0.100.116
 
 # Update NAME0, NAME1 and NAME2 with the hostnames of your hosts
-export NAME0="beta-k8s-etcd-1"
-export NAME1="beta-k8s-etcd-2"
-export NAME2="beta-k8s-etcd-3"
+export NAME0="kube-etcd-server-1"
+export NAME1="kube-etcd-server-2"
+export NAME2="kube-etcd-server-3"
 
 # Create temp directories to store files that will end up on other hosts
 mkdir -p /tmp/${HOST0}/ /tmp/${HOST1}/ /tmp/${HOST2}/
@@ -240,8 +248,7 @@ EOF
 done
 ```
 
-### Generate certificate authority, certificates, and copy them
-Run on first etcd node
+**On first etcd node**, generate certificate authority, certificates, and copy them
 ```bash
 export HOST0=10.0.100.114
 export HOST1=10.0.100.115
@@ -278,30 +285,26 @@ sudo find /tmp/${HOST1} -name ca.key -type f -delete
 
 # Copy files to second and third etcd nodes
 export USER=line6
-export HOST=${HOST1}
-sudo scp -r /tmp/${HOST}/* ${USER}@${HOST}:~/
-sudo ssh ${USER}@${HOST} sudo chown -R root:root ~/pki
-sudo ssh ${USER}@${HOST} sudo mv -f ~/pki /etc/kubernetes/
-
-export HOST=${HOST2}
-sudo scp -r /tmp/${HOST}/* ${USER}@${HOST}:~/
-sudo ssh ${USER}@${HOST} sudo chown -R root:root ~/pki
-sudo ssh ${USER}@${HOST} sudo mv -f ~/pki /etc/kubernetes/
+for HOST in ${HOST1} ${HOST2}; do
+    export HOST
+    sudo -E scp -r /tmp/${HOST}/* ${USER}@${HOST}:~/
+    sudo -E ssh ${USER}@${HOST} 'sudo chown -R root:root ~/pki'
+    sudo -E ssh ${USER}@${HOST} 'sudo mv -f ~/pki /etc/kubernetes/'
+done
 ```
 
-### Create static pod manifests
-On first node
+**On first node**, create static pod manifests
 ```bash
+export HOST0=10.0.100.114
 sudo kubeadm init phase etcd local --config=/tmp/${HOST0}/kubeadmcfg.yaml
 ```
 
-On second and third nodes
+**On second and third nodes**, create static pod manifests
 ```bash
 sudo kubeadm init phase etcd local --config=$HOME/kubeadmcfg.yaml
 ```
 
-### See ETCD cluster health
-Run on only first etcd node
+**On only first etcd node**, cee ETCD cluster health
 ```bash
 # Install ETCDCTL to interact with the etcd cluster
 ETCDCTL_VERSION=3.5.12
@@ -311,16 +314,13 @@ sudo install -o root -g root -m 0755 ./etcd-v$ETCDCTL_VERSION-linux-amd64/etcdct
 rm -r ./etcd-v$ETCDCTL_VERSION-linux-amd64*
 
 # check health
-export HOST0=10.0.100.114
-export HOST1=10.0.100.115
-export HOST2=10.0.100.116
 alias cmd="sudo ETCDCTL_API=3 etcdctl \
 --cert /etc/kubernetes/pki/etcd/peer.crt \
 --key /etc/kubernetes/pki/etcd/peer.key \
 --cacert /etc/kubernetes/pki/etcd/ca.crt"
-cmd --endpoints https://${HOST0}:2379 endpoint health
-cmd --endpoints https://${HOST1}:2379 endpoint health
-cmd --endpoints https://${HOST2}:2379 endpoint health
+cmd --endpoints https://kube-etcd-server-1:2379 endpoint health
+cmd --endpoints https://kube-etcd-server-2:2379 endpoint health
+cmd --endpoints https://kube-etcd-server-3:2379 endpoint health
 ```
 
 Copy necessary files to the first control plane node
@@ -373,9 +373,9 @@ networking:
 etcd:
   external:
     endpoints:
-      - https://10.0.100.114:2379
-      - https://10.0.100.115:2379
-      - https://10.0.100.116:2379
+      - https://kube-etcd-server-1:2379
+      - https://kube-etcd-server-2:2379
+      - https://kube-etcd-server-3:2379
     caFile: /etc/kubernetes/pki/etcd/ca.crt
     certFile: /etc/kubernetes/pki/apiserver-etcd-client.crt
     keyFile: /etc/kubernetes/pki/apiserver-etcd-client.key
@@ -447,12 +447,12 @@ cilium install --version=$CILIUM_VERSION --helm-values cilium.yaml
 The nodes should one by one become 'Ready'
 
 Install cilium hubble and ensure it is working correctly
-```
+```bash
 # check cilium status until OK (takes a minute before its ready)
 cilium status
 
 # enable hubble
-cilium enable hubble
+cilium hubble enable 
 
 # install hubble cli
 HUBBLE_VERSION=$(curl -s https://raw.githubusercontent.com/cilium/hubble/master/stable.txt)
@@ -465,13 +465,14 @@ rm hubble-linux-${HUBBLE_ARCH}*
 
 # test hubble
 cilium hubble port-forward&
+sleep 2
 hubble status
 
 # optionally observe traffic
-hubble observe -n kube-system --follow
+hubble observe -n kube-system #--follow
 ```
 
-### Copy your kubeconfig to your personal PC
+**On your personal PC**, copy the kubeconfig down to the PC
 ```bash
 CLUSTER_NAME=beta-k8s
 scp line6@10.0.100.111:~/.kube/config ~/.kube/$CLUSTER_NAME.kubeconfig
@@ -526,8 +527,8 @@ EOF
 
 ### Cert-Manager with ClusterIssuer (using CloudFlare)
 ```bash
-CERT_MANAGER_CHART_VERSION="v1.14.2" # app version is the same
 CLOUDFLARE_GLOBAL_API_KEY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaa # replace me
+CERT_MANAGER_CHART_VERSION="v1.14.2" # app version is the same
 
 cat <<EOF > cert-manager.yaml
 installCRDs: true
@@ -543,6 +544,7 @@ podDnsConfig:
 EOF
 
 # install
+sudo snap install helm --classic # if not installed on ubuntu
 helm repo add jetstack https://charts.jetstack.io
 helm repo update
 helm install cert-manager jetstack/cert-manager --namespace cert-manager --create-namespace --version=${CERT_MANAGER_CHART_VERSION} -f ./cert-manager.yaml
@@ -557,8 +559,8 @@ metadata:
 spec:
   acme:
     email: christensenjairus@gmail.com
-    # server: https://acme-v02.api.letsencrypt.org/directory # Letsencrypt Production
-    server: https://acme-staging-v02.api.letsencrypt.org/directory # Letsencrypt Staging
+    server: https://acme-v02.api.letsencrypt.org/directory # Letsencrypt Production
+    # server: https://acme-staging-v02.api.letsencrypt.org/directory # Letsencrypt Staging
     privateKeySecretRef:
       name: acme-issuer-account-key
     solvers:
@@ -741,7 +743,7 @@ EOF
 ```
 
 Now go into longhorn's UI and manually create two recurring jobs 
-(these apply to the default group because these two jobs were specified in the config)
+(these apply to the default group because these two jobs were specified in the config for the normal `longhorn` storageclass)
 1. 6hourssnap
 	* Name: 6hourssnap
 	* Force Create: No
@@ -752,7 +754,7 @@ Now go into longhorn's UI and manually create two recurring jobs
 	* Groups: 6hourssnap
 	* Labels: None
 2. dailybackup
-	* Name: 6hourssnap
+	* Name: dailybackup
 	* Force Create: No
 	* Task: Backup
 	* Retain: 14
@@ -843,8 +845,17 @@ kubectl -n kubernetes-dashboard create token admin-user
 
 # Third-party services
 ### GroundCover (Monitoring)
-1. Deploy GroundCover using the command they provide on [their website](https://app.groundcover.com/).
-2. **Do NOT check the option to deploy to tainted nodes**
+```bash
+# Install the groundcover CLI
+sh -c "$(curl -fsSL https://groundcover.com/install.sh)"
+
+groundcover auth login # go to the url and log in after running
+
+# deploy with state & custom metrics
+groundcover deploy --kube-state-metrics --custom-metrics
+```
+Leave the default option enabled to deploy to tainted nodes so that aligator deploys to the master nodes as well.
+View the app website [here](https://app.groundcover.com)
 
 ### CloudCasaa (Backups)
 1. Deploy cloudcasa using the command they provide you on [their website](https://home.cloudsasa.io) when setting up a cluster.
