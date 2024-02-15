@@ -851,8 +851,19 @@ sh -c "$(curl -fsSL https://groundcover.com/install.sh)"
 
 groundcover auth login # go to the url and log in after running
 
+# create values file
+cat <<EOF > groundcover.yaml
+clickhouse:
+  persistence:
+    size: 25Gi # default it 256Gi
+victoria-metrics-single:
+  server:
+    persistentVolume:
+      size: 25Gi # default is 100Gi
+EOF
+
 # deploy with state & custom metrics
-groundcover deploy --kube-state-metrics --custom-metrics
+groundcover deploy --kube-state-metrics --custom-metrics -f ./groundcover.yaml
 ```
 Leave the default option enabled to deploy to tainted nodes so that aligator deploys to the master nodes as well.
 View the app website [here](https://app.groundcover.com)
