@@ -20,13 +20,6 @@ sudo reboot
 ```
 
 Wait for all nodes to reboot fully
-***
-# ***TAKE SNAPSHOT***
-```bash
-./create_cluster_snapshot.sh beta initial_packages_installed "Installed qemu agent, iscsi and nfs packages"
-```
-***
-
 ### Start Installation
 https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/
 
@@ -132,13 +125,6 @@ sudo ctr run --rm --net-host ghcr.io/kube-vip/kube-vip:$KVVERSION vip /kube-vip 
     --arp \
     --leaderElection | sudo tee /etc/kubernetes/manifests/kube-vip.yaml
 ```
-
-***
-# ***TAKE SNAPSHOT***
-```bash
-./create_cluster_snapshot.sh beta kubeadm_packages_installed "Installed kubeadm, kubelet, and kubectl. Kube-Vip manifest created. Ready for etcd cluster creation."
-```
-***
 
 # Create ETCD Cluster
 **On all etc and cp nodes**, create /etc/hosts entries
@@ -335,13 +321,6 @@ sudo ssh "${CONTROL_PLANE}" "sudo mkdir -p /etc/kubernetes/pki/etcd && sudo mv ~
 sudo rm /root/.ssh/id_rsa
 ```
 
-***
-# ***TAKE SNAPSHOT***
-```bash
-./create_cluster_snapshot.sh beta etcd_cluster_running "Installed etcd cluster on etc nodes. All are healthy. Ready for k8s cluster creation."
-```
-***
-
 # Create K8S Cluster
 Create kubeadm config file on first control plane node
 ```bash
@@ -483,13 +462,6 @@ sed -i '' 's/kube-api-server/10.0.100.110/g' $HOME/.kube/$CLUSTER_NAME.kubeconfi
 kubectl config use-context $CLUSTER_NAME
 kubectl get nodes
 ```
-
-***
-# ***TAKE SNAPSHOT***
-```bash
-./create_cluster_snapshot.sh beta k8s_cluster_running "Installed k8s cluster on all nodes. Cilium installed with hubble & encryption."
-```
-***
 
 # Services Installation
 ### MetalLB
@@ -835,13 +807,6 @@ echo "Token for login..."
 kubectl -n kubernetes-dashboard create token admin-user
 ```
 
-***
-# ***TAKE SNAPSHOT***
-```bash
-./create_cluster_snapshot.sh beta metallb_traefik_longhorn_dashboard "Installed metallb, traefik, certmanager, longhorn, and the kubernetes dashboard with ingresses."
-```
-***
-
 # Third-party services
 ### GroundCover (Monitoring)
 ```bash
@@ -871,10 +836,3 @@ View the app website [here](https://app.groundcover.com)
 1. Deploy cloudcasa using the command they provide you on [their website](https://home.cloudsasa.io) when setting up a cluster.
 2. Set up an hourly backup job for the whole cluster (excluding PVs if on free tier) with 30 day retention
 3. Run the new backup job.
-
-***
-# ***TAKE SNAPSHOT***
-```bash
-./create_cluster_snapshot.sh beta third-party-services-installed "Installed groundcover monitoring and cloudcasa backups."
-```
-***
