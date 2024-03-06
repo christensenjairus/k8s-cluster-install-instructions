@@ -129,7 +129,6 @@ sudo ctr run --rm --net-host ghcr.io/kube-vip/kube-vip:$KVVERSION vip /kube-vip 
     --interface $INTERFACE \
     --address $VIP \
     --controlplane \
-    --services \
     --arp \
     --leaderElection | sudo tee /etc/kubernetes/manifests/kube-vip.yaml
 ```
